@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "rapidcopper"
+version = "0.1.0"
+description = ""
+authors = ["Jeffrey04 <mycyberpet@yahoo.com>"]
+readme = "README.md"
+packages = [{ include = "rapidcopper", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+
+typer = "^0.12.5"
+pyperclip = "^1.9.0"
+customtkinter = "^5.2.2"
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry.scripts]
+rc = "rapidcopper.cli:app"
+rcg = "rapidcopper.gui:app"
