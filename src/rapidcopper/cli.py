@@ -11,6 +11,7 @@ from typing import Any
 from xml.dom import NotFoundErr
 
 import typer
+from Levenshtein import distance
 
 app = typer.Typer()
 
@@ -75,6 +76,7 @@ class App:
         return f"app:\t\t{self.name} - {self.description}\n\t\t{self.location}"
 
     def run(self) -> None:
+        print(self)
         subprocess.run(["gtk-launch", Path(self.location).name])
 
 
@@ -173,7 +175,7 @@ def query_pipe(command: str) -> list[Pipe]:
         ).fetchall()
     )
 
-    return result
+    return sorted(result, key=lambda incoming: distance(command, incoming.name))[:5]
 
 
 def query_begin(command: str, args: list[str]) -> list[App | Action]:
@@ -203,13 +205,11 @@ def query_begin(command: str, args: list[str]) -> list[App | Action]:
         ).fetchall()
     )
 
-    return result
+    return sorted(result, key=lambda incoming: distance(command, incoming.name))[:5]
 
 
 def command_expand_like(command: str) -> str:
-    result = "".join(f"{char}%" for char in list(command))
-
-    return f"%{result}"
+    return f"%{command}%"
 
 
 def do_break_pipes(args: list[str]):
@@ -277,6 +277,7 @@ def index_populate_application(cursor: sqlite3.Cursor) -> None:
         os.scandir(path)
         for path in (
             Path("/usr/share/applications"),
+            Path("/var/lib/snapd/desktop/applications"),
             Path.home() / ".local" / "share" / "applications",
             Path.home() / ".nix-profile" / "share" / "application",
         )
@@ -304,9 +305,9 @@ def index_populate_application(cursor: sqlite3.Cursor) -> None:
                 INSERT INTO application (name, description, location) VALUES (?, ?, ?)
                 """,
                 (
-                    entry.path,
-                    description[description.index("=") + 1 :] if description else "",
                     name_def[name_def.index("=") + 1 :],
+                    description[description.index("=") + 1 :] if description else "",
+                    entry.path,
                 ),
             )
 
