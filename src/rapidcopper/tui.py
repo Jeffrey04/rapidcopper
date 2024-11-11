@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,7 +34,7 @@ class Main(App):
         self.result = None
 
     def compose(self) -> ComposeResult:
-        self.widget_result = ListView(id="result")
+        self.widget_result = ListView(id="result", disabled=True)
         self.widget_query = Input(id="query")
 
         yield self.widget_query
@@ -43,8 +44,17 @@ class Main(App):
         if event.key == "escape":
             self.exit()
 
+        elif event.key == "up":
+            self.widget_result.action_cursor_up()
+
+        elif event.key == "down":
+            self.widget_result.action_cursor_down()
+
+        elif event.key == "enter":
+            self.widget_result.action_select_cursor()
+
     @on(Input.Changed, "#query")
-    def query_changed(self, message: Input.Changed) -> None:
+    async def query_changed(self, message: Input.Changed) -> None:
         previous = []
         result = None
         candidates = []
@@ -69,18 +79,25 @@ class Main(App):
         self.candidates = candidates
         self.result = result
 
-        self.widget_result.clear()
+        await self.widget_result.clear()
+
         for candidate in candidates:
-            self.widget_result.append(ListItem(Label(candidate.display())))
+            await self.widget_result.append(ListItem(Label(candidate.display())))
+
+        if candidates:
+            self.widget_result.index = 0
 
     @on(ListView.Selected, "#result")
     def result_selected(self, message: ListView.Selected) -> None:
         selected = self.candidates[message.list_view.index or 0]
+        log(selected)
 
         if isinstance(selected, Application):
             selected.run()
+
         elif isinstance(selected, Action):
             selected.run(*self.result)
+
         elif isinstance(selected, Pipe):
             selected.run(self.result)
 
@@ -92,3 +109,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+elif __name__ == "rapidcopper.tui":
+    app = Main()
