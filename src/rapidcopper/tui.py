@@ -53,13 +53,21 @@ class Main(App):
         elif event.key == "enter":
             self.widget_result.action_select_cursor()
 
+    def tokenize(self, value: str) -> list[str]:
+        result = value.replace("|", " | ").split()
+
+        if result[-1] == "|":
+            result.append("")
+
+        return result
+
     @on(Input.Changed, "#query")
     async def query_changed(self, message: Input.Changed) -> None:
         previous = []
         result = None
         candidates = []
 
-        for idx, group in enumerate(do_break_pipes(message.value.split(" "))):
+        for idx, group in enumerate(do_break_pipes(self.tokenize(message.value))):
             if idx == 0:
                 candidates = query_action_app(*group)
 
