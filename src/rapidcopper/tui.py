@@ -1,4 +1,3 @@
-import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -72,7 +71,6 @@ class Main(App):
                 candidates = query_action_app(*group)
 
                 previous = group
-                pass
 
             elif not candidates:
                 candidates = [Error(description="No input specified")]
@@ -83,6 +81,7 @@ class Main(App):
                 result = candidates[0].run(*previous[1:])
 
                 candidates = query_pipe(group[0])
+                previous = group
 
         self.candidates = candidates
         self.result = result
