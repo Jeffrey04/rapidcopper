@@ -25,5 +25,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 rc = "rapidcopper.cli:app"
-rct = "rapidcopper.tui:app"
+rct = "rapidcopper.tui:main"
 rcg = "rapidcopper.gui:app"
