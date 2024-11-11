@@ -93,7 +93,9 @@ class App:
         return f"app:\t\t{self.name} - {self.description}\n\t\t{self.location}"
 
     def run(self) -> None:
-        subprocess.run(["gtk-launch", Path(self.location).name])
+        subprocess.run(
+            ["gtk-launch", Path(self.location).name], stderr=subprocess.DEVNULL
+        )
 
 
 @app.command()
