@@ -1,9 +1,9 @@
 import ast
 import importlib.util
 import os
+import pkgutil
 import sqlite3
 import subprocess
-from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
@@ -13,6 +13,8 @@ from xml.dom import NotFoundErr
 import typer
 from Levenshtein import distance
 
+import rapidcopper.plugins
+
 app = typer.Typer()
 
 
@@ -21,6 +23,7 @@ class Pipe:
     name: str
     description: str
     location: str
+    is_builtin: bool
 
     @property
     def path(self) -> Path:
@@ -29,12 +32,18 @@ class Pipe:
     def display(self):
         return f"action:\t{self.name} - {self.description}\n\t\t{self.location}"
 
-    def run(self, arg: str) -> Callable[[str], Any]:
-        spec = importlib.util.spec_from_file_location(
-            f"action.{self.name}", self.location
-        )
-        module = importlib.util.module_from_spec(spec)  # type: ignore
-        spec.loader.exec_module(module)  # type: ignore
+    def run(self, arg: str) -> Any:
+        module = None
+
+        if self.is_builtin is False:
+            spec = importlib.util.spec_from_file_location(
+                f"action.{self.name}", self.location
+            )
+            module = importlib.util.module_from_spec(spec)  # type: ignore
+            spec.loader.exec_module(module)  # type: ignore
+
+        else:
+            module = importlib.import_module(self.location)
 
         return module.run(arg)
 
@@ -44,6 +53,7 @@ class Action:
     name: str
     description: str
     location: str
+    is_builtin: bool
 
     @property
     def path(self) -> Path:
@@ -52,12 +62,18 @@ class Action:
     def display(self):
         return f"action:\t{self.name} - {self.description}\n\t\t{self.location}"
 
-    def run(self, *args: tuple[str, ...]) -> Callable[..., Any]:
-        spec = importlib.util.spec_from_file_location(
-            f"action.{self.name}", self.location
-        )
-        module = importlib.util.module_from_spec(spec)  # type: ignore
-        spec.loader.exec_module(module)  # type: ignore
+    def run(self, *args: tuple[str, ...]) -> Any:
+        module = None
+
+        if self.is_builtin is False:
+            spec = importlib.util.spec_from_file_location(
+                f"action.{self.name}", self.location
+            )
+            module = importlib.util.module_from_spec(spec)  # type: ignore
+            spec.loader.exec_module(module)  # type: ignore
+
+        else:
+            module = importlib.import_module(self.location)
 
         return module.run(*args)
 
@@ -76,7 +92,6 @@ class App:
         return f"app:\t\t{self.name} - {self.description}\n\t\t{self.location}"
 
     def run(self) -> None:
-        print(self)
         subprocess.run(["gtk-launch", Path(self.location).name])
 
 
@@ -107,8 +122,7 @@ def do(args: list[str]) -> None:
     current = None
     for idx, group in enumerate(do_break_pipes(args)):
         if idx == 0:
-            # first command, only query actions and apps
-            candidates = query_begin(group[0], group[1:])
+            candidates = query_action_app(group[0], group[1:])
 
             if len(candidates) == 1 and len(group) == 1:
                 if isinstance(candidates[0], App):
@@ -154,7 +168,7 @@ def do(args: list[str]) -> None:
                 current = candidates[choice].run(current)
 
 
-def show_candidates(candidates: list[App | Action | Pipe]) -> None:
+def show_candidates(candidates: list[App | Action] | list[Pipe]) -> None:
     for idx, candidate in enumerate(candidates):
         print(idx, candidate.display())
 
@@ -170,7 +184,11 @@ def query_pipe(command: str) -> list[Pipe]:
     cursor.row_factory = lambda _cursor, row: Pipe(*row)
     result.extend(
         cursor.execute(
-            "select name, description, location from pipe where name LIKE ?",
+            """
+            SELECT  name, description, location, is_builtin
+            FROM    pipe
+            WHERE name LIKE ?
+            """,
             (command_expand_like(command),),
         ).fetchall()
     )
@@ -178,7 +196,7 @@ def query_pipe(command: str) -> list[Pipe]:
     return sorted(result, key=lambda incoming: distance(command, incoming.name))[:5]
 
 
-def query_begin(command: str, args: list[str]) -> list[App | Action]:
+def query_action_app(command: str, args: list[str]) -> list[App | Action]:
     result = []
 
     config_path = Path.home() / ".config" / "rapidcopper"
@@ -192,7 +210,11 @@ def query_begin(command: str, args: list[str]) -> list[App | Action]:
 
         result.extend(
             cursor.execute(
-                "select name, description, location from application where name LIKE ?",
+                """
+                SELECT  name, description, location
+                FROM    application
+                WHERE   name LIKE ?
+                """,
                 (command_expand_like(command),),
             ).fetchall()
         )
@@ -200,7 +222,11 @@ def query_begin(command: str, args: list[str]) -> list[App | Action]:
     cursor.row_factory = lambda _cursor, row: Action(*row)
     result.extend(
         cursor.execute(
-            "select name, description, location from action where name LIKE ?",
+            """
+            SELECT  name, description, location, is_builtin
+            FROM    action
+            WHERE   name LIKE ?
+            """,
             (command_expand_like(command),),
         ).fetchall()
     )
@@ -230,9 +256,7 @@ def do_break_pipes(args: list[str]):
 
 
 def index_populate_action(cursor: sqlite3.Cursor, plugin_path: Path) -> None:
-    for entry in chain.from_iterable(
-        os.scandir(path) for path in (Path(__file__).parent / "plugins", plugin_path)
-    ):
+    for entry in os.scandir(plugin_path):
         if not (entry.name.startswith("action_") and entry.name.endswith(".py")):
             continue
 
@@ -240,20 +264,38 @@ def index_populate_action(cursor: sqlite3.Cursor, plugin_path: Path) -> None:
             description = ast.literal_eval(file.readline())
             cursor.execute(
                 """
-                INSERT INTO action (name, description, location) VALUES (?, ?, ?)
+                INSERT INTO action (name, description, location, is_builtin) VALUES (?, ?, ?, ?)
                 """,
                 (
                     entry.name.lower().split(".")[0].split("action_")[-1],
                     description,
                     entry.path,
+                    False,
+                ),
+            )
+
+    for _finder, name, _ispkg in pkgutil.iter_modules(
+        rapidcopper.plugins.__path__,  # type: ignore
+        rapidcopper.plugins.__name__ + ".",  # type: ignore
+    ):
+        if name.split(".")[-1].startswith("action_"):
+            cursor.execute(
+                """
+                INSERT
+                INTO     action (name, description, location, is_builtin)
+                VALUES   (?, ?, ?, ?)
+                """,
+                (
+                    name.split(".")[-1].split("action_")[-1],
+                    importlib.import_module(name).__doc__,
+                    name,
+                    True,
                 ),
             )
 
 
 def index_populate_pipe(cursor: sqlite3.Cursor, plugin_path: Path) -> None:
-    for entry in chain.from_iterable(
-        os.scandir(path) for path in (Path(__file__).parent / "plugins", plugin_path)
-    ):
+    for entry in os.scandir(plugin_path):
         if not (entry.name.startswith("pipe_") and entry.name.endswith(".py")):
             continue
 
@@ -262,26 +304,49 @@ def index_populate_pipe(cursor: sqlite3.Cursor, plugin_path: Path) -> None:
 
             cursor.execute(
                 """
-                INSERT INTO pipe (name, description, location) VALUES (?, ?, ?)
+                INSERT INTO pipe (name, description, location, is_builtin) VALUES (?, ?, ?, ?)
                 """,
                 (
                     entry.name.lower().split(".")[0].split("pipe_")[-1],
                     description,
                     entry.path,
+                    False,
+                ),
+            )
+
+    for _finder, name, _ispkg in pkgutil.iter_modules(
+        rapidcopper.plugins.__path__,  # type: ignore
+        rapidcopper.plugins.__name__ + ".",  # type: ignore
+    ):
+        if name.split(".")[-1].startswith("pipe_"):
+            cursor.execute(
+                """
+                INSERT
+                INTO     pipe (name, description, location, is_builtin)
+                VALUES   (?, ?, ?, ?)
+                """,
+                (
+                    name.split(".")[-1].split("pipe_")[-1],
+                    importlib.import_module(name).__doc__,
+                    name,
+                    True,
                 ),
             )
 
 
+def desktop_file_get_directory() -> chain[Path]:
+    return chain(
+        map(Path, os.environ["XDG_DATA_DIRS"].split(":")),
+        (
+            Path.home() / ".local" / "share",
+            Path.home() / ".nix-profile" / "share",
+        ),
+    )
+
+
 def index_populate_application(cursor: sqlite3.Cursor) -> None:
     for entry in chain.from_iterable(
-        os.scandir(path)
-        for path in (
-            Path("/usr/share/applications"),
-            Path("/var/lib/snapd/desktop/applications"),
-            Path.home() / ".local" / "share" / "applications",
-            Path.home() / ".nix-profile" / "share" / "application",
-        )
-        if path.exists()
+        map(os.scandir, filter(lambda d: d.exists(), desktop_file_get_directory()))
     ):
         if not check_is_desktop_file(entry):
             continue
@@ -329,7 +394,8 @@ def index_setup(cursor):
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
-            location TEXT NOT NULL
+            location TEXT NOT NULL,
+            is_builtin BOOLEAN NOT NULL
         );
         """
     )
@@ -339,7 +405,8 @@ def index_setup(cursor):
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
-            location TEXT NOT NULL
+            location TEXT NOT NULL,
+            is_builtin BOOLEAN NOT NULL
         );
         """
     )
