@@ -56,7 +56,7 @@ class Main(App):
     def tokenize(self, value: str) -> list[str]:
         result = value.replace("|", " | ").split()
 
-        if result[-1] == "|":
+        if result and result[-1] == "|":
             result.append("")
 
         return result
