@@ -4,6 +4,7 @@ import os
 import pkgutil
 import sqlite3
 import subprocess
+from collections.abc import Generator
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
@@ -122,7 +123,7 @@ def do(args: list[str]) -> None:
     current = None
     for idx, group in enumerate(do_break_pipes(args)):
         if idx == 0:
-            candidates = query_action_app(group[0], group[1:])
+            candidates = query_action_app(*group)
 
             if len(candidates) == 1 and len(group) == 1:
                 if isinstance(candidates[0], App):
@@ -196,7 +197,7 @@ def query_pipe(command: str) -> list[Pipe]:
     return sorted(result, key=lambda incoming: distance(command, incoming.name))[:5]
 
 
-def query_action_app(command: str, args: list[str]) -> list[App | Action]:
+def query_action_app(command: str, *args: str) -> list[App | Action]:
     result = []
 
     config_path = Path.home() / ".config" / "rapidcopper"
@@ -334,13 +335,16 @@ def index_populate_pipe(cursor: sqlite3.Cursor, plugin_path: Path) -> None:
             )
 
 
-def desktop_file_get_directory() -> chain[Path]:
-    return chain(
-        map(Path, os.environ["XDG_DATA_DIRS"].split(":")),
-        (
-            Path.home() / ".local" / "share",
-            Path.home() / ".nix-profile" / "share",
-        ),
+def desktop_file_get_directory() -> Generator[Path]:
+    return (
+        path / "applications"
+        for path in chain(
+            map(Path, os.environ["XDG_DATA_DIRS"].split(":")),
+            (
+                Path.home() / ".local" / "share",
+                Path.home() / ".nix-profile" / "share",
+            ),
+        )
     )
 
 
