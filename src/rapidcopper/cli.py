@@ -93,7 +93,9 @@ class App:
         return f"app:\t\t{self.name} - {self.description}\n\t\t{self.location}"
 
     def run(self) -> None:
-        subprocess.run(["gtk-launch", Path(self.location).name])
+        subprocess.run(
+            ["gtk-launch", Path(self.location).name], stderr=subprocess.DEVNULL
+        )
 
 
 @app.command()
@@ -177,22 +179,23 @@ def show_candidates(candidates: list[App | Action] | list[Pipe]) -> None:
 def query_pipe(command: str) -> list[Pipe]:
     result = []
 
-    config_path = Path.home() / ".config" / "rapidcopper"
-    index_path = config_path / "index.sqlite"
+    if command:
+        config_path = Path.home() / ".config" / "rapidcopper"
+        index_path = config_path / "index.sqlite"
 
-    con = sqlite3.connect(index_path)
-    cursor = con.cursor()
-    cursor.row_factory = lambda _cursor, row: Pipe(*row)
-    result.extend(
-        cursor.execute(
-            """
-            SELECT  name, description, location, is_builtin
-            FROM    pipe
-            WHERE name LIKE ?
-            """,
-            (command_expand_like(command),),
-        ).fetchall()
-    )
+        con = sqlite3.connect(index_path)
+        cursor = con.cursor()
+        cursor.row_factory = lambda _cursor, row: Pipe(*row)
+        result.extend(
+            cursor.execute(
+                """
+                SELECT  name, description, location, is_builtin
+                FROM    pipe
+                WHERE name LIKE ?
+                """,
+                (command_expand_like(command),),
+            ).fetchall()
+        )
 
     return sorted(result, key=lambda incoming: distance(command, incoming.name))[:5]
 

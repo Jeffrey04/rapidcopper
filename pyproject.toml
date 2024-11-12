@@ -14,6 +14,10 @@ typer = "^0.12.5"
 pyperclip = "^1.9.0"
 customtkinter = "^5.2.2"
 levenshtein = "^0.26.1"
+textual = "^0.85.2"
+[tool.poetry.group.dev.dependencies]
+textual-dev = "^1.6.1"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
@@ -21,4 +25,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 rc = "rapidcopper.cli:app"
+rct = "rapidcopper.tui:main"
 rcg = "rapidcopper.gui:app"
